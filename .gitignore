@@ -1,3 +1,7 @@
 
 # DVC-generated training artifacts
 /artifacts/
+
+# Python cache
+__pycache__/
+*.pyc
