@@ -5,3 +5,10 @@
 # Python cache
 __pycache__/
 *.pyc
+
+# Docker build logs
+*.log
+
+# Python virtual environments
+.venv/
+venv/
