@@ -1,0 +1,41 @@
+services:
+  redis:
+    image: redis:7.4.2-alpine
+    container_name: mlops-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    image: ${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODEL_VERSION: ${MODEL_VERSION}
+        GIT_SHA: ${GIT_SHA}
+    container_name: mlops-api
+    env_file:
+      - .env
+    environment:
+      MODEL_PATH: /app/artifacts/model.joblib
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MODEL_VERSION: ${MODEL_VERSION}
+      DECISION_THRESHOLD: ${DECISION_THRESHOLD}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "${HOST_PORT}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:

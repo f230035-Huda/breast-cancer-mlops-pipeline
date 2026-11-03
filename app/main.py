@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 import joblib
+import redis
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -17,6 +18,19 @@ GIT_SHA = os.getenv("GIT_SHA", "unknown")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+redis_client = (
+    redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        decode_responses=True,
+        socket_connect_timeout=1,
+        socket_timeout=1,
+    )
+    if os.getenv("REDIS_HOST")
+    else None
+)
+
+REDIS_COUNTER_KEY = "prediction_requests"
 DECISION_THRESHOLD = float(
     os.getenv("DECISION_THRESHOLD", "0.5")
 )
@@ -24,6 +38,7 @@ if not 0.0 <= DECISION_THRESHOLD <= 1.0:
     raise ValueError(
         "DECISION_THRESHOLD must be between 0 and 1"
     )
+
 # 2. Logging to stdout
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -146,6 +161,13 @@ def predict(payload: PredictRequest):
 
     prediction_count += 1
 
+    if redis_client is not None:
+        try:
+            redis_count = redis_client.incr(REDIS_COUNTER_KEY)
+            logger.info("Redis prediction counter: %s", redis_count)
+        except redis.exceptions.RedisError as error:
+            logger.warning("Redis unavailable; prediction continues: %s", error)
+
     logger.info(
         "Prediction completed | label=%s | probability=%.4f",
         label,
@@ -172,16 +194,30 @@ def model_info():
         "feature_count": model_card["feature_count"],
         "metrics": model_card["metrics"],
     }
-# 11. GET /stats
+#11
 @app.get("/stats")
 def stats():
+    if redis_client is not None:
+        try:
+            count = redis_client.get(REDIS_COUNTER_KEY)
+            return {
+                "prediction_count": int(count or 0),
+                "source": "redis",
+                "redis_host": REDIS_HOST,
+                "redis_port": REDIS_PORT,
+            }
+        except redis.exceptions.RedisError as error:
+            logger.warning("Redis unavailable while reading stats: %s", error)
+
+            return {
+                "prediction_count": prediction_count,
+                "source": "in_memory_fallback",
+                "redis_available": False,
+            }
+
     return {
         "prediction_count": prediction_count,
         "source": "in_memory",
         "redis_host": REDIS_HOST,
         "redis_port": REDIS_PORT,
-        "note": (
-            "Temporary in-memory counter. "
-            "Redis integration will be added in Milestone 4."
-        ),
     }

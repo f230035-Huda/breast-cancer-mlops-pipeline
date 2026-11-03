@@ -12,3 +12,8 @@ __pycache__/
 # Python virtual environments
 .venv/
 venv/
+
+# Environment configuration
+.env
+
+app/main.py.backup
